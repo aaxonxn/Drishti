@@ -1,10 +1,32 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 import pandas as pd
+from datetime import datetime
 from final_scheduler import run_scheduler
 
-app = FastAPI()
+app = FastAPI(title="DRISHTI API", version="1.0")
+
+# --------------------------------------------
+# In-Memory Operator State
+# (resets on server restart — fine for demo)
+# --------------------------------------------
+operator_state = {
+    "machine_overrides": {},   # { machineId: "offline" | "maintenance" | "active" }
+    "acknowledged_alerts": set(),  # set of acknowledged machineIds
+    "action_log": [],          # list of {timestamp, action, detail}
+    "custom_jobs": [],         # list of extra jobs injected by operator
+}
+
+def log_action(action: str, detail: str):
+    operator_state["action_log"].insert(0, {
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "action": action,
+        "detail": detail,
+    })
+    # keep last 50 actions only
+    operator_state["action_log"] = operator_state["action_log"][:50]
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,7 +82,9 @@ def optimize_schedule(weights: WeightRequest):
     return run_scheduler(
         revenue_weight=weights.revenueWeight,
         risk_weight=weights.riskWeight,
-        load_weight=weights.loadWeight
+        load_weight=weights.loadWeight,
+        machine_overrides=operator_state["machine_overrides"],
+        custom_jobs=operator_state["custom_jobs"],
     )
 
 # --------------------------------------------
@@ -117,3 +141,93 @@ def sensitivity():
             "objectiveValue": float(row["Objective_Value"])
         })
     return result
+
+# --------------------------------------------
+# Operator — Active Alerts (unacknowledged high-risk machines)
+# --------------------------------------------
+@app.get("/api/operator/alerts")
+def operator_alerts():
+    df = pd.read_excel("outputs/Machine_Dataset_With_HealthScore.xlsx")
+    alerts = []
+    for _, row in df.iterrows():
+        mid = str(row["Machine_ID"])
+        if row["Failure_Probability"] > 0.75 and mid not in operator_state["acknowledged_alerts"]:
+            alerts.append({
+                "machineId": mid,
+                "failureProbability": round(float(row["Failure_Probability"]), 3),
+                "healthScore": round(float(row["Machine_Health_Score"]), 1),
+                "machineAge": int(row["Machine_Age"]) if "Machine_Age" in row.index else 0,
+                "machineType": str(row["Machine_Type"]),
+                "currentStatus": operator_state["machine_overrides"].get(mid, "active"),
+            })
+    return sorted(alerts, key=lambda x: x["failureProbability"], reverse=True)
+
+# --------------------------------------------
+# Operator — Acknowledge Alert
+# --------------------------------------------
+class AcknowledgeRequest(BaseModel):
+    machineId: str
+
+@app.post("/api/operator/acknowledge-alert")
+def acknowledge_alert(req: AcknowledgeRequest):
+    operator_state["acknowledged_alerts"].add(req.machineId)
+    log_action("ACKNOWLEDGE", f"Alert acknowledged for machine {req.machineId}")
+    return {"success": True, "machineId": req.machineId}
+
+# --------------------------------------------
+# Operator — Override Machine Status
+# --------------------------------------------
+class OverrideRequest(BaseModel):
+    machineId: str
+    status: str  # "active" | "maintenance" | "offline"
+
+@app.post("/api/operator/override-machine")
+def override_machine(req: OverrideRequest):
+    if req.status not in ("active", "maintenance", "offline"):
+        return {"success": False, "error": "Invalid status. Use: active | maintenance | offline"}
+    operator_state["machine_overrides"][req.machineId] = req.status
+    log_action("OVERRIDE", f"Machine {req.machineId} → {req.status.upper()}")
+    return {"success": True, "machineId": req.machineId, "status": req.status}
+
+# --------------------------------------------
+# Operator — Add Custom Job to Queue
+# --------------------------------------------
+class AddJobRequest(BaseModel):
+    jobId: str
+    requiredMachineType: str
+    revenuePerJob: float
+    processingTimeHours: float
+    deadlineHours: float
+    priorityLevel: int = 1
+
+@app.post("/api/operator/add-job")
+def add_job(req: AddJobRequest):
+    job = {
+        "Job_ID": req.jobId,
+        "Required_Machine_Type": req.requiredMachineType,
+        "Revenue_Per_Job": req.revenuePerJob,
+        "Processing_Time_Hours": req.processingTimeHours,
+        "Deadline_Hours": req.deadlineHours,
+        "Priority_Level": req.priorityLevel,
+    }
+    operator_state["custom_jobs"].append(job)
+    log_action("ADD JOB", f"Job {req.jobId} queued ({req.requiredMachineType}, ${req.revenuePerJob:,.0f})")
+    return {"success": True, "job": job, "totalCustomJobs": len(operator_state["custom_jobs"])}
+
+# --------------------------------------------
+# Operator — Action Log
+# --------------------------------------------
+@app.get("/api/operator/log")
+def operator_log():
+    return operator_state["action_log"]
+
+# --------------------------------------------
+# Operator — Reset All Overrides & Custom Jobs
+# --------------------------------------------
+@app.post("/api/operator/reset")
+def operator_reset():
+    operator_state["machine_overrides"].clear()
+    operator_state["acknowledged_alerts"].clear()
+    operator_state["custom_jobs"].clear()
+    log_action("RESET", "All operator overrides, alerts, and custom jobs cleared")
+    return {"success": True}

@@ -9,10 +9,33 @@ import numpy as np
 
 PLANNING_DAYS = 5
 
-def run_scheduler(revenue_weight=0.5, risk_weight=0.4, load_weight=0.1):
+def run_scheduler(revenue_weight=0.5, risk_weight=0.4, load_weight=0.1,
+                  machine_overrides=None, custom_jobs=None):
+
+    if machine_overrides is None:
+        machine_overrides = {}
+    if custom_jobs is None:
+        custom_jobs = []
 
     machines = pd.read_excel("outputs/Maintenance_Simulation_Results.xlsx")
     jobs = pd.read_excel("data/Job_Dataset.xlsx")
+
+    # Apply operator machine overrides
+    if machine_overrides:
+        def apply_override(row):
+            mid = str(row["Machine_ID"])
+            override = machine_overrides.get(mid)
+            if override == "offline":
+                return "Replace Machine"   # treatment: exclude from scheduling
+            if override == "maintenance":
+                return "Perform Preventive Maintenance"  # reduces available capacity
+            return row["Recommended_Action"]
+        machines["Recommended_Action"] = machines.apply(apply_override, axis=1)
+
+    # Append any operator-added custom jobs
+    if custom_jobs:
+        custom_df = pd.DataFrame(custom_jobs)
+        jobs = pd.concat([jobs, custom_df], ignore_index=True)
 
     machines["Weekly_Capacity"] = machines["Daily_Operating_Hours"] * PLANNING_DAYS
 

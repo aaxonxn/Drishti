@@ -10,6 +10,7 @@ import MaintenancePage from "./maintenance/page"
 import SchedulingPage from "./scheduling/page"
 import WeightTuningPage from "./weight-tuning/page"
 import SensitivityPage from "./sensitivity/page"
+import OperatorPage from "./operator/page"
 
 export default function DrishtiDashboard() {
   const [activeSection, setActiveSection] = useState("dashboard")
@@ -26,6 +27,7 @@ export default function DrishtiDashboard() {
     scheduling: "SCHEDULING",
     "weight-tuning": "WEIGHT TUNING",
     sensitivity: "SENSITIVITY",
+    operator: "OPERATOR",
   }
 
   return (
@@ -49,12 +51,19 @@ export default function DrishtiDashboard() {
               onClick={() => setActiveSection(key)}
               aria-label={`Navigate to ${sectionLabels[key]}`}
               aria-current={activeSection === key ? "page" : undefined}
-              className={`w-full text-left px-4 py-2 rounded text-sm transition ${activeSection === key
-                ? "bg-orange-500 text-black font-semibold"
-                : "text-neutral-400 hover:text-orange-500 hover:bg-neutral-900"
+              className={`w-full text-left px-4 py-2 rounded text-sm transition flex items-center justify-between ${activeSection === key
+                  ? key === "operator"
+                    ? "bg-orange-500 text-black font-semibold"
+                    : "bg-orange-500 text-black font-semibold"
+                  : key === "operator"
+                    ? "text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 border border-orange-500/30"
+                    : "text-neutral-400 hover:text-orange-500 hover:bg-neutral-900"
                 }`}
             >
               {sectionLabels[key]}
+              {key === "operator" && activeSection !== "operator" && (
+                <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+              )}
             </button>
           ))}
         </nav>
@@ -111,6 +120,7 @@ export default function DrishtiDashboard() {
           {activeSection === "scheduling" && <SchedulingPage />}
           {activeSection === "weight-tuning" && <WeightTuningPage />}
           {activeSection === "sensitivity" && <SensitivityPage />}
+          {activeSection === "operator" && <OperatorPage />}
         </div>
       </div>
     </div>
