@@ -210,9 +210,35 @@ def add_job(req: AddJobRequest):
         "Deadline_Hours": req.deadlineHours,
         "Priority_Level": req.priorityLevel,
     }
+
+    # ── 1. Keep in-memory for the current scheduler session ──
     operator_state["custom_jobs"].append(job)
-    log_action("ADD JOB", f"Job {req.jobId} queued ({req.requiredMachineType}, ${req.revenuePerJob:,.0f})")
-    return {"success": True, "job": job, "totalCustomJobs": len(operator_state["custom_jobs"])}
+
+    # ── 2. Persist to the actual Excel dataset so it survives restarts ──
+    job_path = "data/Job_Dataset.xlsx"
+    try:
+        existing = pd.read_excel(job_path)
+        # Guard: don't add duplicates if Job_ID already exists
+        if req.jobId in existing["Job_ID"].astype(str).values:
+            log_action("ADD JOB", f"Job {req.jobId} already exists in dataset — skipped duplicate write")
+            return {"success": False, "error": f"Job ID '{req.jobId}' already exists in the dataset"}
+        new_row = pd.DataFrame([job])
+        updated = pd.concat([existing, new_row], ignore_index=True)
+        updated.to_excel(job_path, index=False)
+        persisted = True
+    except Exception as e:
+        persisted = False
+        log_action("ADD JOB ERROR", f"Failed to write to dataset: {str(e)}")
+
+    status = "saved to dataset" if persisted else "in-memory only (dataset write failed)"
+    log_action("ADD JOB", f"Job {req.jobId} queued ({req.requiredMachineType}, ${req.revenuePerJob:,.0f}) — {status}")
+    return {
+        "success": True,
+        "job": job,
+        "persisted": persisted,
+        "totalCustomJobs": len(operator_state["custom_jobs"])
+    }
+
 
 # --------------------------------------------
 # Operator — Action Log
