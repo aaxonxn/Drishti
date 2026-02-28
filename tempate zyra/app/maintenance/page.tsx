@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Loader2 } from "lucide-react"
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+const API = process.env.NEXT_PUBLIC_API_URL || "https://drishti-h8gn.onrender.com"
 
 interface MaintenanceRecord {
     machineId: string

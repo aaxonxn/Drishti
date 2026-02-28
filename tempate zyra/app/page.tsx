@@ -33,7 +33,10 @@ export default function DrishtiDashboard() {
       {/* Sidebar */}
       <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col">
         <div className="p-6 border-b border-neutral-800">
-          <h1 className="text-xl font-bold text-orange-500 tracking-wider">DRISHTI</h1>
+          <div className="flex items-center gap-3">
+            <img src="/logo.svg" alt="DRISHTI logo" className="w-8 h-8" />
+            <h1 className="text-xl font-bold text-orange-500 tracking-wider">DRISHTI</h1>
+          </div>
           <p className="text-xs text-neutral-500 mt-1">
             Predictive Maintenance & Scheduling
           </p>
